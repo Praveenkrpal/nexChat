@@ -15,6 +15,7 @@ import {
   FiCheck,
   FiEye,
   FiEyeOff,
+  FiXCircle,
 } from "react-icons/fi";
 
 import api from "../services/api";
@@ -37,10 +38,66 @@ const Register = () => {
 
   const [verificationMethod, setVerificationMethod] = useState("email");
 
-  // Password visibility
+  // ==========================================
+  // EMAIL VALIDATION
+  // ==========================================
+
+  const [emailTouched, setEmailTouched] = useState(false);
+
+  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim());
+
+  const showEmailError = emailTouched && !isValidEmail;
+  const showEmailSuccess = emailTouched && isValidEmail;
+
+  // ==========================================
+  // PASSWORD STRENGTH VALIDATION
+  // ==========================================
+
+  const passwordChecks = {
+    minLength: form.password.length >= 8,
+    uppercase: /[A-Z]/.test(form.password),
+    lowercase: /[a-z]/.test(form.password),
+    number: /[0-9]/.test(form.password),
+    special: /[^A-Za-z0-9]/.test(form.password),
+  };
+
+  const isStrongPassword = Object.values(passwordChecks).every(Boolean);
+
+  // Show only password requirements that are still missing.
+  const passwordErrors = [];
+
+  if (form.password.length > 0) {
+    if (!passwordChecks.minLength) {
+      passwordErrors.push("At least 8 characters required.");
+    }
+
+    if (!passwordChecks.uppercase) {
+      passwordErrors.push("Uppercase letter is missing.");
+    }
+
+    if (!passwordChecks.lowercase) {
+      passwordErrors.push("Lowercase letter is missing.");
+    }
+
+    if (!passwordChecks.number) {
+      passwordErrors.push("Number is missing.");
+    }
+
+    if (!passwordChecks.special) {
+      passwordErrors.push("Special character is missing.");
+    }
+  }
+
+  // ==========================================
+  // PASSWORD VISIBILITY
+  // ==========================================
+
   const [showPassword, setShowPassword] = useState(false);
 
-  // register / verify
+  // ==========================================
+  // REGISTER / VERIFY
+  // ==========================================
+
   const [step, setStep] = useState("register");
 
   // ==========================================
@@ -51,7 +108,6 @@ const Register = () => {
   const [verificationId, setVerificationId] = useState("");
 
   const [countdown, setCountdown] = useState(OTP_DURATION);
-
   const [otpExpired, setOtpExpired] = useState(false);
 
   // ==========================================
@@ -65,7 +121,7 @@ const Register = () => {
   const [resending, setResending] = useState(false);
 
   // ==========================================
-  // COUNTDOWN
+  // OTP COUNTDOWN
   // ==========================================
 
   useEffect(() => {
@@ -88,7 +144,7 @@ const Register = () => {
   }, [step]);
 
   // ==========================================
-  // RESET TIMER
+  // RESET OTP TIMER
   // ==========================================
 
   const startOtpTimer = () => {
@@ -103,7 +159,6 @@ const Register = () => {
 
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
-
     const remainingSeconds = seconds % 60;
 
     return `${minutes.toString().padStart(2, "0")}:${remainingSeconds
@@ -112,14 +167,23 @@ const Register = () => {
   };
 
   // ==========================================
-  // HANDLE INPUT
+  // HANDLE INPUT CHANGE
   // ==========================================
 
   const handleChange = (e) => {
-    setForm({
-      ...form,
-      [e.target.name]: e.target.value,
-    });
+    const { name, value } = e.target;
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (name === "email") {
+      setEmailTouched(true);
+    }
+
+    setError("");
+    setSuccess("");
   };
 
   // ==========================================
@@ -131,6 +195,7 @@ const Register = () => {
 
     setError("");
     setSuccess("");
+    setEmailTouched(false);
 
     if (method === "email") {
       setForm((prev) => ({
@@ -146,7 +211,7 @@ const Register = () => {
   };
 
   // ==========================================
-  // REGISTER
+  // REGISTER ACCOUNT
   // ==========================================
 
   const handleSubmit = async (e) => {
@@ -154,21 +219,42 @@ const Register = () => {
 
     setError("");
     setSuccess("");
+
+    // Validate email before calling the backend.
+    if (verificationMethod === "email") {
+      setEmailTouched(true);
+
+      if (!isValidEmail) {
+        setError(
+          "Please enter a valid email address (for example, name@example.com) before creating your account."
+        );
+        return;
+      }
+    }
+
+    // Validate password strength before calling the backend.
+    if (!isStrongPassword) {
+      setError(
+        "Please fix the missing password requirements before creating your account."
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
       const payload = {
-        name: form.name,
+        name: form.name.trim(),
         password: form.password,
         verificationMethod,
       };
 
-      // EMAIL
+      // EMAIL REGISTRATION
       if (verificationMethod === "email") {
-        payload.email = form.email;
+        payload.email = form.email.trim();
       }
 
-      // MOBILE
+      // MOBILE REGISTRATION
       if (verificationMethod === "mobile") {
         payload.phone = form.phone;
       }
@@ -181,13 +267,15 @@ const Register = () => {
         setVerificationId(data.verificationId || "");
       }
 
-      setSuccess(data.message);
+      setSuccess(data.message || "Verification code sent successfully.");
 
       startOtpTimer();
-
       setStep("verify");
     } catch (error) {
-      setError(error.response?.data?.message || "Registration failed");
+      setError(
+        error.response?.data?.message ||
+          "We couldn't create your account. Please check your details and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -203,17 +291,16 @@ const Register = () => {
     setError("");
     setSuccess("");
 
-    // Frontend expiry check
     if (otpExpired || countdown <= 0) {
       setOtpExpired(true);
 
-      setError("OTP has expired. Please resend a new OTP.");
+      setError("Your verification code has expired. Please request a new one.");
 
       return;
     }
 
     if (otp.length !== 6) {
-      setError("Please enter a valid 6-digit OTP");
+      setError("Please enter the complete 6-digit verification code.");
 
       return;
     }
@@ -221,20 +308,16 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // EMAIL OTP
+      // EMAIL OTP VERIFICATION
       if (verificationMethod === "email") {
         const response = await api.post("/auth/verify-email", {
-          email: form.email,
+          email: form.email.trim(),
           otp,
         });
 
-        setSuccess(
-          response.data?.message || "Email verified successfully"
-        );
-      }
-
-      // MOBILE OTP
-      else {
+        setSuccess(response.data?.message || "Email verified successfully.");
+      } else {
+        // MOBILE OTP VERIFICATION
         const response = await api.post("/auth/verify-mobile-otp", {
           phone: form.phone,
           verificationId,
@@ -242,7 +325,7 @@ const Register = () => {
         });
 
         setSuccess(
-          response.data?.message || "Mobile number verified successfully"
+          response.data?.message || "Mobile number verified successfully."
         );
       }
 
@@ -251,18 +334,17 @@ const Register = () => {
       }, 1200);
     } catch (error) {
       const message =
-        error.response?.data?.message || "OTP verification failed";
+        error.response?.data?.message || "OTP verification failed.";
 
       const lowerMessage = message.toLowerCase();
 
-      if (
-        lowerMessage.includes("expired") ||
-        lowerMessage.includes("expire")
-      ) {
+      if (lowerMessage.includes("expired") || lowerMessage.includes("expire")) {
         setOtpExpired(true);
         setCountdown(0);
 
-        setError("OTP has expired. Please resend a new OTP.");
+        setError(
+          "Your verification code has expired. Please request a new one."
+        );
       } else {
         setError(message);
       }
@@ -285,19 +367,17 @@ const Register = () => {
     setResending(true);
 
     try {
-      // EMAIL
+      // RESEND EMAIL OTP
       if (verificationMethod === "email") {
         const response = await api.post("/auth/resend-email-otp", {
-          email: form.email,
+          email: form.email.trim(),
         });
 
         setSuccess(
-          response.data?.message || "New OTP sent successfully"
+          response.data?.message || "A new verification code has been sent."
         );
-      }
-
-      // MOBILE
-      else {
+      } else {
+        // RESEND MOBILE OTP
         const response = await api.post("/auth/send-mobile-otp", {
           phone: form.phone,
         });
@@ -305,14 +385,15 @@ const Register = () => {
         setVerificationId(response.data?.verificationId || "");
 
         setSuccess(
-          response.data?.message || "New OTP sent successfully"
+          response.data?.message || "A new verification code has been sent."
         );
       }
 
       startOtpTimer();
     } catch (error) {
       setError(
-        error.response?.data?.message || "Unable to resend OTP"
+        error.response?.data?.message ||
+          "We couldn't resend the verification code. Please try again."
       );
     } finally {
       setResending(false);
@@ -337,14 +418,22 @@ const Register = () => {
   };
 
   // ==========================================
+  // EMAIL INPUT STYLES
+  // ==========================================
+
+  const emailBorderClass = showEmailError
+    ? "border-red-500 bg-red-500/[0.04] focus-within:ring-2 focus-within:ring-red-500/10"
+    : showEmailSuccess
+    ? "border-emerald-500 bg-emerald-500/[0.04] focus-within:ring-2 focus-within:ring-emerald-500/10"
+    : "border-white/[0.07] bg-white/[0.03] focus-within:border-violet-500/50 focus-within:bg-violet-500/[0.03] focus-within:ring-2 focus-within:ring-violet-500/10";
+
+  // ==========================================
   // UI
   // ==========================================
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-[#080b18] text-white">
-      {/* ======================================
-          BACKGROUND
-      ====================================== */}
+      {/* BACKGROUND */}
 
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-violet-600/15 blur-3xl" />
@@ -365,42 +454,21 @@ const Register = () => {
         }}
       />
 
-      {/* ======================================
-          MAIN
-      ====================================== */}
+      {/* MAIN */}
 
       <div className="relative z-10 flex min-h-[100dvh] items-center justify-center px-4 py-8 sm:px-6">
         <motion.div
-          initial={{
-            opacity: 0,
-            y: 25,
-            scale: 0.98,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-            scale: 1,
-          }}
-          transition={{
-            duration: 0.45,
-            ease: "easeOut",
-          }}
+          initial={{ opacity: 0, y: 25, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.45, ease: "easeOut" }}
           className="w-full max-w-[460px]"
         >
-          {/* ==================================
-              BRAND
-          ================================== */}
+          {/* BRAND */}
 
           <div className="mb-6 text-center sm:mb-8">
             <motion.div
-              initial={{
-                opacity: 0,
-                scale: 0.7,
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-              }}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
               transition={{
                 delay: 0.1,
                 type: "spring",
@@ -419,18 +487,9 @@ const Register = () => {
             <AnimatePresence mode="wait">
               <motion.div
                 key={step}
-                initial={{
-                  opacity: 0,
-                  y: 5,
-                }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                }}
-                exit={{
-                  opacity: 0,
-                  y: -5,
-                }}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
               >
                 <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
                   {step === "register"
@@ -450,16 +509,12 @@ const Register = () => {
                   ) : verificationMethod === "email" ? (
                     <>
                       Enter the OTP sent to{" "}
-                      <span className="text-slate-300">
-                        {form.email}
-                      </span>
+                      <span className="text-slate-300">{form.email}</span>
                     </>
                   ) : (
                     <>
                       Enter the OTP sent to{" "}
-                      <span className="text-slate-300">
-                        +91 {form.phone}
-                      </span>
+                      <span className="text-slate-300">+91 {form.phone}</span>
                     </>
                   )}
                 </p>
@@ -467,17 +522,13 @@ const Register = () => {
             </AnimatePresence>
           </div>
 
-          {/* ==================================
-              CARD
-          ================================== */}
+          {/* CARD */}
 
           <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0d1222]/95 shadow-2xl shadow-black/30 backdrop-blur-xl">
             <div className="h-px bg-gradient-to-r from-transparent via-violet-500/70 to-transparent" />
 
             <div className="p-5 sm:p-7">
-              {/* ==================================
-                  ERROR
-              ================================== */}
+              {/* ERROR */}
 
               <AnimatePresence>
                 {error && (
@@ -500,17 +551,13 @@ const Register = () => {
                     className="mb-5 overflow-hidden"
                   >
                     <div className="rounded-xl border border-red-500/15 bg-red-500/[0.06] px-4 py-3">
-                      <p className="text-xs leading-5 text-red-400">
-                        {error}
-                      </p>
+                      <p className="text-xs leading-5 text-red-400">{error}</p>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* ==================================
-                  SUCCESS
-              ================================== */}
+              {/* SUCCESS */}
 
               <AnimatePresence>
                 {success && (
@@ -545,28 +592,17 @@ const Register = () => {
                 )}
               </AnimatePresence>
 
-              {/* ==================================
-                  REGISTER STEP
-              ================================== */}
-
               <AnimatePresence mode="wait">
+                {/* REGISTER STEP */}
+
                 {step === "register" && (
                   <motion.div
                     key="register"
-                    initial={{
-                      opacity: 0,
-                      x: -15,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      x: 0,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      x: -15,
-                    }}
+                    initial={{ opacity: 0, x: -15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -15 }}
                   >
-                    {/* Verification method */}
+                    {/* VERIFICATION METHOD */}
 
                     <div className="mb-6">
                       <label className="mb-3 block text-xs font-medium text-slate-400">
@@ -588,8 +624,6 @@ const Register = () => {
                           }`}
                         />
 
-                        {/* EMAIL */}
-
                         <button
                           type="button"
                           onClick={() => handleMethodChange("email")}
@@ -602,8 +636,6 @@ const Register = () => {
                           <FiMail size={15} />
                           Email
                         </button>
-
-                        {/* MOBILE */}
 
                         <button
                           type="button"
@@ -620,12 +652,9 @@ const Register = () => {
                       </div>
                     </div>
 
-                    {/* Registration form */}
+                    {/* REGISTRATION FORM */}
 
-                    <form
-                      onSubmit={handleSubmit}
-                      className="space-y-5"
-                    >
+                    <form onSubmit={handleSubmit} className="space-y-5">
                       {/* NAME */}
 
                       <div>
@@ -669,18 +698,24 @@ const Register = () => {
                               opacity: 0,
                               x: 10,
                             }}
-                            transition={{
-                              duration: 0.18,
-                            }}
+                            transition={{ duration: 0.18 }}
                           >
                             <label className="mb-2 block text-xs font-medium text-slate-400">
                               Email Address
                             </label>
 
-                            <div className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 transition-all focus-within:border-violet-500/50 focus-within:bg-violet-500/[0.03] focus-within:ring-2 focus-within:ring-violet-500/10">
+                            <div
+                              className={`group flex items-center gap-3 rounded-xl border px-4 transition-all ${emailBorderClass}`}
+                            >
                               <FiMail
                                 size={17}
-                                className="shrink-0 text-slate-600 transition-colors group-focus-within:text-violet-400"
+                                className={`shrink-0 ${
+                                  showEmailError
+                                    ? "text-red-400"
+                                    : showEmailSuccess
+                                    ? "text-emerald-400"
+                                    : "text-slate-600"
+                                }`}
                               />
 
                               <input
@@ -689,10 +724,46 @@ const Register = () => {
                                 required
                                 value={form.email}
                                 onChange={handleChange}
+                                onBlur={() => setEmailTouched(true)}
+                                onInvalid={() => setEmailTouched(true)}
                                 placeholder="you@example.com"
+                                aria-invalid={showEmailError}
+                                aria-describedby="email-validation-message"
                                 className="w-full bg-transparent py-3.5 text-sm text-white outline-none placeholder:text-slate-600"
                               />
+
+                              {showEmailSuccess && (
+                                <FiCheck
+                                  size={18}
+                                  className="shrink-0 text-emerald-400"
+                                  aria-label="Valid email format"
+                                />
+                              )}
+
+                              {showEmailError && form.email.length > 0 && (
+                                <FiXCircle
+                                  size={18}
+                                  className="shrink-0 text-red-400"
+                                  aria-label="Invalid email format"
+                                />
+                              )}
                             </div>
+
+                            {emailTouched && (
+                              <p
+                                id="email-validation-message"
+                                aria-live="polite"
+                                className={`mt-2 text-xs ${
+                                  showEmailError
+                                    ? "text-red-400"
+                                    : "text-emerald-400"
+                                }`}
+                              >
+                                {showEmailError
+                                  ? "Please enter a valid email address, e.g. name@example.com."
+                                  : "Email format looks good."}
+                              </p>
+                            )}
                           </motion.div>
                         )}
 
@@ -713,9 +784,7 @@ const Register = () => {
                               opacity: 0,
                               x: -10,
                             }}
-                            transition={{
-                              duration: 0.18,
-                            }}
+                            transition={{ duration: 0.18 }}
                           >
                             <label className="mb-2 block text-xs font-medium text-slate-400">
                               Mobile Number
@@ -739,13 +808,13 @@ const Register = () => {
                                 inputMode="numeric"
                                 value={form.phone}
                                 onChange={(e) => {
-                                  setForm({
-                                    ...form,
-                                    phone: e.target.value.replace(
-                                      /\D/g,
-                                      ""
-                                    ),
-                                  });
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    phone: e.target.value.replace(/\D/g, ""),
+                                  }));
+
+                                  setError("");
+                                  setSuccess("");
                                 }}
                                 placeholder="9876543210"
                                 className="w-full bg-transparent py-3.5 text-sm text-white outline-none placeholder:text-slate-600"
@@ -762,34 +831,43 @@ const Register = () => {
                           Password
                         </label>
 
-                        <div className="group flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.03] px-4 transition-all focus-within:border-violet-500/50 focus-within:bg-violet-500/[0.03] focus-within:ring-2 focus-within:ring-violet-500/10">
+                        <div
+                          className={`group flex items-center gap-3 rounded-xl border px-4 transition-all ${
+                            isStrongPassword
+                              ? "border-emerald-500 bg-emerald-500/[0.04] focus-within:ring-2 focus-within:ring-emerald-500/10"
+                              : "border-white/[0.07] bg-white/[0.03] focus-within:border-violet-500/50 focus-within:bg-violet-500/[0.03] focus-within:ring-2 focus-within:ring-violet-500/10"
+                          }`}
+                        >
                           <FiLock
                             size={17}
-                            className="shrink-0 text-slate-600 transition-colors group-focus-within:text-violet-400"
+                            className={`shrink-0 transition-colors ${
+                              isStrongPassword
+                                ? "text-emerald-400"
+                                : "text-slate-600 group-focus-within:text-violet-400"
+                            }`}
                           />
 
                           <input
                             type={showPassword ? "text" : "password"}
                             name="password"
                             required
-                            minLength={6}
+                            minLength={8}
                             value={form.password}
                             onChange={handleChange}
-                            placeholder="Minimum 6 characters"
+                            placeholder="Create a strong password"
+                            aria-describedby={
+                              passwordErrors.length > 0
+                                ? "password-validation-errors"
+                                : undefined
+                            }
                             className="w-full bg-transparent py-3.5 text-sm text-white outline-none placeholder:text-slate-600"
                           />
 
-                          {/* SHOW / HIDE PASSWORD */}
-
                           <button
                             type="button"
-                            onClick={() =>
-                              setShowPassword((prev) => !prev)
-                            }
+                            onClick={() => setShowPassword((prev) => !prev)}
                             aria-label={
-                              showPassword
-                                ? "Hide password"
-                                : "Show password"
+                              showPassword ? "Hide password" : "Show password"
                             }
                             className="shrink-0 text-slate-500 transition-colors hover:text-violet-400 focus:outline-none"
                           >
@@ -801,9 +879,25 @@ const Register = () => {
                           </button>
                         </div>
 
-                        <p className="mt-2 text-[11px] text-slate-600">
-                          Use at least 6 characters for your password.
-                        </p>
+                        {/* SHOW ONLY PASSWORD REQUIREMENTS THAT ARE MISSING */}
+
+                        {passwordErrors.length > 0 && (
+                          <div
+                            id="password-validation-errors"
+                            className="mt-3 space-y-1"
+                            aria-live="polite"
+                          >
+                            {passwordErrors.map((message) => (
+                              <p
+                                key={message}
+                                className="flex items-center gap-2 text-xs text-red-400"
+                              >
+                                <FiXCircle size={14} className="shrink-0" />
+                                {message}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* SUBMIT */}
@@ -812,9 +906,7 @@ const Register = () => {
                         type="submit"
                         disabled={loading}
                         whileHover={!loading ? { y: -1 } : undefined}
-                        whileTap={
-                          !loading ? { scale: 0.98 } : undefined
-                        }
+                        whileTap={!loading ? { scale: 0.98 } : undefined}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/10 transition-all hover:shadow-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {loading ? (
@@ -845,29 +937,18 @@ const Register = () => {
                   </motion.div>
                 )}
 
-                {/* ==================================
-                    OTP STEP
-                ================================== */}
+                {/* OTP STEP */}
 
                 {step === "verify" && (
                   <motion.form
                     key="verify"
-                    initial={{
-                      opacity: 0,
-                      x: 15,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      x: 0,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      x: 15,
-                    }}
+                    initial={{ opacity: 0, x: 15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 15 }}
                     onSubmit={handleVerifyOtp}
                     className="space-y-5"
                   >
-                    {/* OTP icon */}
+                    {/* OTP ICON */}
 
                     <div className="flex justify-center">
                       <motion.div
@@ -889,7 +970,7 @@ const Register = () => {
                       </motion.div>
                     </div>
 
-                    {/* OTP information */}
+                    {/* OTP INFORMATION */}
 
                     <div className="text-center">
                       <p className="text-xs leading-5 text-slate-500">
@@ -901,7 +982,7 @@ const Register = () => {
                       </p>
                     </div>
 
-                    {/* OTP input */}
+                    {/* OTP INPUT */}
 
                     <div>
                       <label className="mb-2 block text-xs font-medium text-slate-400">
@@ -914,9 +995,7 @@ const Register = () => {
                         maxLength={6}
                         value={otp}
                         onChange={(e) =>
-                          setOtp(
-                            e.target.value.replace(/\D/g, "")
-                          )
+                          setOtp(e.target.value.replace(/\D/g, ""))
                         }
                         placeholder="000000"
                         disabled={otpExpired}
@@ -925,7 +1004,7 @@ const Register = () => {
                       />
                     </div>
 
-                    {/* Countdown */}
+                    {/* COUNTDOWN */}
 
                     <div className="text-center">
                       {countdown > 0 ? (
@@ -942,26 +1021,18 @@ const Register = () => {
                       )}
                     </div>
 
-                    {/* Verify */}
+                    {/* VERIFY */}
 
                     <motion.button
                       type="submit"
-                      disabled={
-                        loading ||
-                        otpExpired ||
-                        otp.length !== 6
-                      }
+                      disabled={loading || otpExpired || otp.length !== 6}
                       whileHover={
-                        !loading &&
-                        !otpExpired &&
-                        otp.length === 6
+                        !loading && !otpExpired && otp.length === 6
                           ? { y: -1 }
                           : undefined
                       }
                       whileTap={
-                        !loading &&
-                        !otpExpired &&
-                        otp.length === 6
+                        !loading && !otpExpired && otp.length === 6
                           ? { scale: 0.98 }
                           : undefined
                       }
@@ -980,28 +1051,22 @@ const Register = () => {
                       )}
                     </motion.button>
 
-                    {/* Resend */}
+                    {/* RESEND */}
 
                     <motion.button
                       type="button"
                       whileHover={
-                        countdown === 0 &&
-                        !resending &&
-                        !loading
+                        countdown === 0 && !resending && !loading
                           ? { y: -1 }
                           : undefined
                       }
                       whileTap={
-                        countdown === 0 &&
-                        !resending &&
-                        !loading
+                        countdown === 0 && !resending && !loading
                           ? { scale: 0.98 }
                           : undefined
                       }
                       onClick={handleResendOtp}
-                      disabled={
-                        countdown > 0 || resending || loading
-                      }
+                      disabled={countdown > 0 || resending || loading}
                       className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.025] py-3 text-xs font-medium text-slate-400 transition-all hover:border-violet-500/30 hover:bg-violet-500/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <FiRefreshCw
@@ -1012,13 +1077,11 @@ const Register = () => {
                       {resending
                         ? "Sending new code..."
                         : countdown > 0
-                        ? `Resend code in ${formatTime(
-                            countdown
-                          )}`
+                        ? `Resend code in ${formatTime(countdown)}`
                         : "Resend verification code"}
                     </motion.button>
 
-                    {/* Change identifier */}
+                    {/* CHANGE IDENTIFIER */}
 
                     <button
                       type="button"
@@ -1036,17 +1099,16 @@ const Register = () => {
                 )}
               </AnimatePresence>
 
-              {/* Security */}
+              {/* SECURITY */}
 
               <div className="mt-6 flex items-center justify-center gap-2 text-[11px] text-slate-600">
                 <FiShield size={13} />
-
                 <span>Your information is securely protected</span>
               </div>
             </div>
           </div>
 
-          {/* Footer */}
+          {/* FOOTER */}
 
           <p className="mt-6 text-center text-[11px] text-slate-600">
             NexChat • Simple. Private. Real-time.
